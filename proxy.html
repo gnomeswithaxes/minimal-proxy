@@ -13,8 +13,8 @@
         integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU=" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
 
-    <link rel="preload" href="https://fonts.googleapis.com">
-    <link rel="preload" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@500&family=Roboto+Condensed:wght@700&display=swap"
         rel="stylesheet">
@@ -41,7 +41,8 @@
             <div class="col">
                 <div class="g-3">
                     <div class="form-group ">
-                        <label for="area" class="form-label"> Inserisci lista carte </label>
+                        <label for="area" class="form-label" style="font-family: 'Open Sans';"> Inserisci lista carte
+                        </label>
                         <textarea id="area" class="form-control"></textarea>
                     </div>
                 </div>
@@ -55,12 +56,18 @@
                         <input id="cards" class="form-control">
                     </div>
                     <div class="col-auto">
-                        <button id="add-button" class="btn btn-outline-secondary">Add Card</button>
+                        <button id="add-button" class="btn btn-outline-secondary"
+                            style="font-family: 'Roboto Condensed';">Add Card</button>
                     </div>
                 </div>
                 <hr>
                 <div class="d-grid gap-2">
-                    <button id="update-button" class="btn btn-primary">Print list</button>
+                    <button id="update-button" class="btn btn-primary" style="font-family: 'Roboto Condensed';">Print
+                        list</button>
+                </div><br>
+                <div class="d-grid gap-2 progress" role="progressbar" aria-label="Processed" aria-valuenow="0"
+                    aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar" id="progress" style="width: 0%"></div>
                 </div>
             </div>
             <div class="shape-container col">
@@ -102,12 +109,16 @@
             $("#add-button").on("click", () => {
                 inp = $("#cards")
                 if (inp.val() !== "") {
-                    document.getElementById("area").value += "\n" + $("#amount").val() + " " + inp.val()
+                    area = document.getElementById("area")
+                    area.value += (area.value.slice(-1) == "\n" || area.value.length == 0 ? "" : "\n") + $("#amount").val() + " " + inp.val() + "\n"
                     inp.val("")
                 }
             })
 
             $("#update-button").on("click", async () => {
+                elem.replaceChildren(...[]); // reset canvas
+                $('#progress').css('width', "0%").attr('aria-valuenow', 0); // reset progress bar
+
                 const raw = document.getElementById("area").value.trim();
                 const lines = raw.match(/[^\r\n]+/g);
                 let entries = []
@@ -130,11 +141,27 @@
                         .then((response) => card_list = [...card_list, ...response.data])
                 }
 
-                entries.map((entry) => {
-                    entry.card = card_list.find((card) => card.name == entry.name)
+                let skipped = []
+                entries = entries.filter((entry) => {
+                    found = card_list.find((card) => card.name.toLowerCase() == entry.name.toLocaleLowerCase());
+                    if (found) {
+                        if (!found.type_line.includes("Basic")) {
+                            entry.card = found;
+                            return true;
+                        }
+                    }
+                    skipped.push(entry);
+                    return false;
                 })
 
-                elem.replaceChildren(...[]);
+                const max = entries.length;
+                let processed = 0;
+
+                function updateBar() {
+                    processed += 1;
+                    let progress = (processed / max * 100);
+                    $('#progress').css('width', progress + "%").attr('aria-valuenow', progress);
+                }
 
                 let pageId = 0;
                 while (entries.length) {
@@ -159,6 +186,7 @@
                     );
 
                     let cards = entries.splice(0, 10);
+
                     let n = 0;
 
                     const C1 = 2;
@@ -173,6 +201,7 @@
                                 drawCard(cardGroup, cards[n].card);
                                 pageGroup.add(cardGroup);
                                 n++;
+                                updateBar()
                             }
                         }
                     }
@@ -190,6 +219,7 @@
                                 drawCard(cardGroup, cards[n].card);
                                 pageGroup.add(cardGroup);
                                 n++;
+                                updateBar()
                             }
                         }
                     }
@@ -208,6 +238,7 @@
                     layer.add(pageGroup);
                     stage.add(layer);
                     layer.draw();
+
                     pageId++;
                 }
             });
@@ -241,14 +272,16 @@
                 y: borderOffset,
                 width: borderW,
                 height: borderH,
-                stroke: "green",
+                stroke: "gray",
                 strokeWidth: 0.5,
                 fill: null,
                 cornerRadius: borderRadius
             })
-            border.strokeLinearGradientStartPoint({ x: W / 2, y: borderOffset });
-            border.strokeLinearGradientEndPoint({ x: W / 2, y: H - borderOffset });
-            border.strokeLinearGradientColorStops(getGradient(card.color_identity));
+            if (card.color_identity.length > 0) {
+                border.strokeLinearGradientStartPoint({ x: W / 2, y: borderOffset });
+                border.strokeLinearGradientEndPoint({ x: W / 2, y: H - borderOffset });
+                border.strokeLinearGradientColorStops(getGradient(card.color_identity));
+            }
             cardGroup.add(border);
 
             const textstartX = borderOffset * 2;
@@ -257,6 +290,7 @@
             const lineStart = W - 2 * borderOffset;
             const elemDistance = 1;
             const textSize = 3.9;
+            const oracleSize = 3.2; 
             const powtouSize = 6;
 
             let nameText = new Konva.Text({
@@ -266,7 +300,7 @@
                 text: card.name,
                 fontSize: textSize,
                 fontFamily: "Roboto Condensed",
-                align: "left"
+                align: 'center',
             })
             cardGroup.add(nameText);
 
@@ -280,11 +314,11 @@
             let typeText = new Konva.Text({
                 x: textstartX,
                 y: sep1.points()[1] + 2 * elemDistance,
-                text: card.type_line.trim(),
+                text: card.type_line.replace('—', '\n').trim(),
                 width: textWidth,
                 fontSize: textSize,
                 fontFamily: "Roboto Condensed",
-                align: "left",
+                align: "center",
             })
             cardGroup.add(typeText);
 
@@ -295,54 +329,59 @@
             })
             cardGroup.add(sep2)
 
-            let temp = new Konva.Text({
-                x: textstartX,
-                text: (card.power + "/" + card.toughness).trim(),
-                fontSize: powtouSize,
-                fontFamily: "Roboto Condensed",
-                visible: false,
-            })
-            temp.y(H - temp.height() - 2 * borderOffset);
-            cardGroup.add(temp);
+            let textHeight = H - 2 * borderOffset - sep2.points()[1] - elemDistance;
+            if ((card.power && card.power.length > 0) || (card.toughness && card.toughness.length > 0)
+                || (card.mana_cost && card.mana_cost.length > 0) || card.loyalty && card.loyalty.length > 0) {
 
-            let sep3 = new Konva.Line({
-                points: [lineStart, temp.y() - borderOffset, W - lineStart, temp.y() - borderOffset],
-                stroke: "black",
-                strokeWidth: 0.1
-            })
-            cardGroup.add(sep3);
-            textHeight = sep3.points()[1] - sep2.points()[1] - borderOffset - elemDistance;
+                text = "";
+                if (card.power) {
+                    text = card.power.trim() + "/" + card.toughness.trim();
+                } else if (card.loyalty) {
+                    text = " " + card.loyalty + " ";
+                }
 
-            costGroup = newCostGroup(card.mana_cost);
-            costGroup.x(textstartX + borderOffset);
-            costGroup.y(temp.y() + 3 * elemDistance);
-            cardGroup.add(costGroup);
+                const temp = new Konva.Text({ text: text, fontSize: powtouSize, fontFamily: "Roboto Condensed", })
+                temp.y(H - temp.height() - 2 * borderOffset);
 
-            if (card.power && card.power.length > 0) {
-                powtouText = new Konva.Text({
-                    x: textstartX,
-                    y: sep3.points()[1] + sep3.strokeWidth() + (H - borderOffset - sep3.points()[1] - temp.height()) / 2,
-                    text: (card.power + "/" + card.toughness).trim(),
-                    fontSize: powtouSize,
-                    fontFamily: "Roboto Condensed",
-                    width: textWidth,
-                    align: 'right'
-                })
-                cardGroup.add(powtouText);
-
-                let sep4 = new Konva.Line({
-                    points: [W - temp.width() - 2 * borderOffset - elemDistance, sep3.points()[1] + elemDistance, W - temp.width() - 2 * borderOffset - elemDistance, H - borderOffset - elemDistance],
+                let sep3 = new Konva.Line({
+                    points: [lineStart, temp.y() - borderOffset, W - lineStart, temp.y() - borderOffset],
                     stroke: "black",
                     strokeWidth: 0.1
                 })
-                cardGroup.add(sep4);
+                cardGroup.add(sep3);
+                textHeight = sep3.points()[1] - sep2.points()[1] - borderOffset - elemDistance;
+
+                costGroup = newCostGroup(card.mana_cost);
+                costGroup.x(textstartX + borderOffset);
+                costGroup.y(temp.y() + 3 * elemDistance);
+                cardGroup.add(costGroup);
+
+                if (text.length > 0) { 
+                    powtouText = new Konva.Text({
+                        x: textstartX,
+                        y: sep3.points()[1] + sep3.strokeWidth() + (H - borderOffset - sep3.points()[1] - temp.height()) / 2,
+                        text: text,
+                        fontSize: powtouSize,
+                        fontFamily: "Roboto Condensed",
+                        width: textWidth,
+                        align: 'right'
+                    })
+                    cardGroup.add(powtouText);
+
+                    let sep4 = new Konva.Line({
+                        points: [W - temp.width() - 2 * borderOffset - elemDistance, sep3.points()[1], W - temp.width() - 2 * borderOffset - elemDistance, H - borderOffset - elemDistance],
+                        stroke: "black",
+                        strokeWidth: 0.1
+                    })
+                    cardGroup.add(sep4);
+                }
             }
 
             let cardText = new Konva.Text({
                 x: textstartX,
                 y: sep2.points()[1] + elemDistance,
                 text: card.oracle_text.replace(/ *\([^)]*\) */g, ""),
-                fontSize: 3.2,
+                fontSize: oracleSize,
                 fontFamily: "Open Sans",
                 align: "left",
                 width: textWidth,
@@ -377,6 +416,7 @@
             if (identity.includes("B")) return "black";
             if (identity.includes("R")) return "red";
             if (identity.includes("G")) return "green";
+            if (identity.includes("C")) return "gray";
         }
 
         function newCostGroup(cost) {
@@ -391,7 +431,7 @@
             group = new Konva.Group();
             for (let i = 0; i < symbols.length; i++) {
                 symbol = symbols[i];
-                if ("WUBRG".includes(symbol)) {
+                if ("WUBRGC".includes(symbol)) {
                     group.add(new Konva.Circle({
                         x: i * (Hsize + distance),
                         radius: size,

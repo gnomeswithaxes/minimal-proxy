@@ -29,8 +29,7 @@
         }
     </style>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.3/jspdf.debug.js" crossorigin="anonymous"
-        integrity="sha384-NaWTHo/8YCBYJ59830LTz/P4aQZK1sS0SneOgAvhsIl3zBu8r9RevNg5lHCHAuQ/"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/konva@8/konva.min.js"></script>
 
 </head>
@@ -64,13 +63,17 @@
                 <div class="d-grid gap-2">
                     <button id="update-button" class="btn btn-primary" style="font-family: 'Roboto Condensed';">Print
                         list</button>
-                </div><br>
-                <div class="d-grid gap-2 progress" role="progressbar" aria-label="Processed" aria-valuenow="0"
-                    aria-valuemin="0" aria-valuemax="100">
-                    <div class="progress-bar" id="progress" style="width: 0%"></div>
+                    <div class="d-grid gap-2 progress" role="progressbar" aria-label="Processed" aria-valuenow="0"
+                        aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar" id="progress" style="width: 0%"></div>
+                    </div>
+                    <button id="download-button" class="btn btn-primary" disabled
+                        style="font-family: 'Roboto Condensed';">Download</button>
                 </div>
+
             </div>
             <div class="shape-container col">
+                <h3 id="anteprima"></h3>
                 <div id="draw-shapes"></div>
             </div>
 
@@ -79,7 +82,8 @@
 
     <script>
         var elem = document.getElementById('draw-shapes');
-        const mul = 3.8;
+        const drawMul = 10;
+        const showMul = 3.8;
         const pageW = 210;
         const pageH = 297;
         const W = 63;
@@ -118,6 +122,7 @@
             $("#update-button").on("click", async () => {
                 elem.replaceChildren(...[]); // reset canvas
                 $('#progress').css('width', "0%").attr('aria-valuenow', 0); // reset progress bar
+                $('#download-button').prop('disabled', true); // disable download button
 
                 const raw = document.getElementById("area").value.trim();
                 const lines = raw.match(/[^\r\n]+/g);
@@ -163,6 +168,11 @@
                     $('#progress').css('width', progress + "%").attr('aria-valuenow', progress);
                 }
 
+                if (max > 0) {
+                    $('#anteprima').html("Anteprima di stampa (<i>qualità inferiore rispetto al pdf</i>)");
+                }
+
+                images = [];
                 let pageId = 0;
                 while (entries.length) {
                     const newPage = document.createElement("div");
@@ -171,8 +181,8 @@
 
                     let stage = new Konva.Stage({
                         container: newPage.id,
-                        width: pageW * mul,
-                        height: pageH * mul,
+                        width: pageW * drawMul,
+                        height: pageH * drawMul,
                     })
                     let layer = new Konva.Layer();
                     let pageGroup = new Konva.Group();
@@ -233,15 +243,40 @@
                         })
                     );
 
-                    pageGroup.scale({ x: mul, y: mul });
-
+                    // salvo l'immagine a risoluzione alta
+                    pageGroup.scale({ x: drawMul, y: drawMul });
                     layer.add(pageGroup);
                     stage.add(layer);
-                    layer.draw();
+                    images.push(stage.toDataURL({ pixelRatio: 1 }));
 
+                    // mostro le carte alla giusta dimensione
+                    stage.height(pageH * showMul);
+                    stage.width(pageW * showMul);
+                    pageGroup.scale({ x: showMul, y: showMul });
+
+                    layer.draw();
                     pageId++;
                 }
+                
+                if (max > 0) {
+                    $('#download-button').on('click', () => {
+                        var pdf = new window.jspdf.jsPDF('p', 'mm', 'a4', true);
+
+                        for (const [i, image] of images.entries()) {
+                            pdf.addImage(image, 0, 0, pageW, pageH);
+                            if (i !== images.length - 1)
+                                pdf.insertPage();
+                        }
+
+                        pdf.save("download.pdf");
+
+                    });
+
+                    $('#download-button').prop('disabled', false)
+                };
             });
+
+
         });
 
         async function fetch_collection(ids) {
@@ -290,7 +325,7 @@
             const lineStart = W - 2 * borderOffset;
             const elemDistance = 1;
             const textSize = 3.9;
-            const oracleSize = 3.2; 
+            const oracleSize = 3.2;
             const powtouSize = 6;
 
             let nameText = new Konva.Text({
@@ -356,7 +391,7 @@
                 costGroup.y(temp.y() + 3 * elemDistance);
                 cardGroup.add(costGroup);
 
-                if (text.length > 0) { 
+                if (text.length > 0) {
                     powtouText = new Konva.Text({
                         x: textstartX,
                         y: sep3.points()[1] + sep3.strokeWidth() + (H - borderOffset - sep3.points()[1] - temp.height()) / 2,

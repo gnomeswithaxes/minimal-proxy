@@ -1,0 +1,38 @@
+@font-face {
+    font-family: "Open Sans";
+    src: url('../fonts/mana.woff2') format('woff2'),
+        url('../fonts/mana.woff') format('woff'),
+        url('../fonts/mana.ttf') format('truetype');
+    unicode-range: U+E600-E6FF, U+E900-E9FF, U+1F3AB;
+}
+
+@font-face {
+    font-family: "Open Sans";
+    src: url('../fonts/OpenSans-Medium.ttf') format('truetype');
+}
+
+@font-face {
+    font-family: "Roboto Condensed";
+    src: url("../fonts/RobotoCondensed-Bold.ttf") format('truetype');
+}
+
+#fontloader {
+    font-family: "Open Sans";
+    visibility: hidden;
+}
+
+#area {
+    height: 20rem;
+}
+
+#update-button {
+    font-family: "Roboto Condensed";
+}
+
+#add-button {
+    font-family: "Roboto Condensed";
+}
+
+#download-button {
+    font-family: "Roboto Condensed";
+}

@@ -124,10 +124,9 @@ class NormalCard extends Card {
     }
 
     drawCardText() {
-        let oracle_text = this.card.oracle_text.replace(/ *\([^)]*\) */g, "")
         this.cardText = new Konva.Text({
             x: this.o.textStartX,
-            text: oracle_text.replace(/\{[^{]+}/g, s => symbol_dic[s]),
+            text: format_oracle(this.card.oracle_text),
             fontSize: this.o.oracleSize,
             fontFamily: "Open Sans",
             align: "left",
@@ -140,7 +139,6 @@ class NormalCard extends Card {
     }
 
     async drawCardImage() {
-        if (this.prints == null) await this.getPrints()
         let remaining_space = this.cardText.y() - this.typeArtSep.points()[1] - 2 * this.o.elemDistance
         if (remaining_space > 0) {
 
@@ -149,7 +147,7 @@ class NormalCard extends Card {
                 imageObj.onload = () => {
                     this.img = new Konva.Image({image: imageObj});
 
-                    // until it doesn't fit, scale it down 0.1
+                    // until it doesn't fit, scale it down
                     let currentScale = this.o.maxImageScale
                     while (this.img.height() > remaining_space && currentScale >= this.o.minImageScale) {
                         this.img.width(this.o.textWidth * currentScale)
@@ -169,17 +167,7 @@ class NormalCard extends Card {
                     resolve();
                 };
                 imageObj.setAttribute('crossOrigin', 'anonymous');
-
-                if (this.selected != null)
-                    imageObj.src = this.prints.find(p => {
-                        const [code, collector] = this.selected.split("-")
-                        return p.code === code && p.collector === collector
-                    }).art
-                else {
-                    const first = this.prints[0]
-                    this.selected = first.code + "-" + first.collector
-                    imageObj.src = first.art
-                }
+                imageObj.src = this.getImageSrc()
             })
             // wait for the image to load
             await imgLoadPromise;

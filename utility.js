@@ -1,5 +1,10 @@
 // noinspection JSUnresolvedReference
 
+
+function format_oracle(text) {
+    return text.replace(/ *\([^)]*\) *\n*/g, "").replace(/\{[^{]+}/g, s => symbol_dic[s])
+}
+
 function newCostGroup(cost) {
     let distance = 3;
     let Hsize = 2;

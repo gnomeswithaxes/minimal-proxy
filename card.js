@@ -5,12 +5,20 @@ class Card {
         this.card = scryCard
         this.o = Object.assign({}, options)
 
+        this.actual_card = scryCard
+        this.is_face = false
+
         this.cardGroup = new Konva.Group()
 
         this.prints = null
         this.selected = null
 
         this.resetAllComponents()
+    }
+
+    set face(face) {
+        this.card = face
+        this.is_face = true
     }
 
     resetAllComponents() {
@@ -21,17 +29,36 @@ class Card {
     // returns a list of cards corresponding to all prints
     async getPrints() {
         const cards = await this.fetchPrints();
-        this.prints = cards.map((c) => {
-            return {set_name: c.set_name, code: c.set, art: c.image_uris.art_crop, collector: c.collector_number}
-        });
+        if (this.is_face) {
+            this.prints = cards.map((c) => {
+                const face = c.card_faces.find(f => f.name === this.card.name)
+                return {set_name: c.set_name, code: c.set, art: face.image_uris.art_crop, collector: c.collector_number}
+            });
+        } else {
+            this.prints = cards.map((c) => {
+                return {set_name: c.set_name, code: c.set, art: c.image_uris.art_crop, collector: c.collector_number}
+            });
+        }
     }
 
     async fetchPrints() {
-        return fetch(this.card.prints_search_uri, {
+        return fetch(this.actual_card.prints_search_uri, {
             method: "GET", headers: {'Content-Type': 'application/json'},
         }).then(async r => {
             return (await r.json()).data;
         })
+    }
+
+    getImageSrc() {
+        if (this.selected != null && this.prints != null)
+            return this.prints.find(p => {
+                const [code, collector] = this.selected.split("-")
+                return p.code === code && p.collector === collector
+            }).art
+        else {
+            this.selected = this.actual_card.set + "-" + this.actual_card.collector_number
+            return this.card.image_uris.art_crop
+        }
     }
 
     newText({x, y, text, size = this.o.textSize, width = this.o.textWidth, rotation = 0, align = "center"}) {

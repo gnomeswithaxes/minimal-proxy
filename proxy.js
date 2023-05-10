@@ -27,7 +27,7 @@ const globalDefaultOptions = {
     get borderW() {
         return this.W - this.borderOffset * 2
     },
-    get borderH () {
+    get borderH() {
         return this.H - this.borderOffset * 2
     },
     get textStartX() {
@@ -66,6 +66,8 @@ $(async () => {
     });
 });
 
+let card_faces = []
+
 $(() => {
     $("#cards").autocomplete({
         minLength: 3
@@ -80,6 +82,15 @@ $(() => {
         }
     })
 
+    const download_button = $('#download-button')
+    download_button.prop('disabled', true);
+    download_button.on('click', (event) => {
+        if (!event.detail || event.detail === 1) { // prevents multiple clicks
+            download_button.prop('disabled', true);
+            createPDF()
+        }
+    });
+
     $("#update-button").on("click", async () => {
         // reset canvas
         elem.replaceChildren(...[]);
@@ -89,14 +100,12 @@ $(() => {
         progressBar.css('width', "0%").attr('aria-valuenow', 0);
         progressBar.removeClass("bg-success")
 
-        // disable download button
-        let download_button = $('#download-button')
+        // disable download button and empty card_groups
         download_button.prop('disabled', true);
 
         // empty skipped
         let skipped_elem = $('#skipped')
         skipped_elem.text("")
-
 
         // parse the text area
         const raw = document.getElementById("area").value.trim();
@@ -105,19 +114,31 @@ $(() => {
         // retrieve card objects from scryfall
         let card_list = []
         for (let i = 0; i < entries.length; i += scryfallPageLength) {
-            await fetch_collection(entries.slice(i, scryfallPageLength).map((e) => {
+            const query = entries.slice(i, i + scryfallPageLength).map((e) => {
                 return {name: e.fetch_name}
-            }))
+            })
+            await fetch_collection(query)
                 .then((response) => card_list = [...card_list, ...response.data])
         }
 
         // assign card objects to the entries
         let skipped = []
+        card_faces = []
         for (let entry of entries) {
-            let found = card_list.find((card) => card.name.toLocaleLowerCase() === entry.name.toLocaleLowerCase());
+            let found = card_list.find((card) => card.name.toLocaleLowerCase() === entry.name.toLocaleLowerCase() ||
+                card.name.toLocaleLowerCase().split("//")[0].trim() === entry.fetch_name.toLocaleLowerCase()) // sometimes lists are exported with only the first half of the name
             if (found) {
                 if (!found.type_line.includes("Basic")) { // basic lands are skipped because why would you proxy them
                     entry.scrycard = found
+                    card_faces.push(entry)
+                    if (found.card_faces && found.card_faces.length > 0 && found.layout !== "split") {
+                        const new_entry = Object.assign({}, entry)
+                        entry.face = found.card_faces[0]
+                        new_entry.face = found.card_faces[1]
+                        card_faces.push(new_entry)
+                    } else {
+                        entry.face = found
+                    }
                 }
             } else {
                 if (skipped.indexOf(entry) === -1) { // if not already in skipped list
@@ -128,14 +149,17 @@ $(() => {
 
         // show names of skipped cards
         if (skipped.length > 0) {
-            skipped_elem.text("Skipped:" + skipped.map((e) => " " + e.name))
+            let skipped_text = "Skipped: <ul>"
+
+            for (const e of skipped) {
+                skipped_text += "<li>" + e.name + "</li>"
+            }
+            skipped_text += "</ul>"
+            skipped_elem.html(skipped_text)
         }
 
-        // purge entries that haven't been found
-        entries = entries.filter((e) => e.scrycard != null)
-
         // progress bar
-        const max = entries.length;
+        const max = card_faces.length;
         let processed = 0;
 
         function updateBar() {
@@ -144,6 +168,7 @@ $(() => {
             progressBar.css('width', progress + "%").attr('aria-valuenow', progress);
             if (progress === 100) {
                 progressBar.addClass("bg-success")
+                download_button.prop('disabled', false)
             }
         }
 
@@ -156,17 +181,11 @@ $(() => {
         const card_container = $('#boot-cards')
         card_container.empty()
 
-        let card_groups = []
 
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i]
-            const c = entry.scrycard
-            let card;
-            if (c.layout === "split") {
-                card = new SplitCard(c, globalDefaultOptions)
-            } else {
-                card = new NormalCard(c, globalDefaultOptions)
-            }
+        for (let i = 0; i < card_faces.length; i++) {
+            const entry = card_faces[i]
+            const card = cardFactory(entry)
+
             await card.draw()
             const group = card.cardGroup
 
@@ -175,14 +194,12 @@ $(() => {
                 '   <div class="card-body p-0">' +
                 '       <div id="card-' + i + '">Loading...</div>' +
                 '   </div>' +
-                '   <div class="card-footer  ">' +
+                '   <div class="card-footer">' +
                 '       <div class="row">' +
                 '           <div class="col-auto"><span class="input-group-text">' + entry.amount + '</span></div>' +
-                '           <select class="col form-select" id="select-' + i + '">'
-            card.prints.forEach((p) => {
-                new_elem += '   <option value="' + p.code + '-' + p.collector + '">' + p.set_name + ' (#' + p.collector + ')</option>'
-            })
-            new_elem +=
+                '           <select class="col form-select" id="select-' + i + '">' +
+                '               <option selected>Change art...</option>' +
+                '               <option>Loading prints</option>' +
                 '           </select>' +
                 '           <div class="col-auto btn-group" role="group">' +
                 '               <button id="minus-' + i + '" type="button" class="btn btn-secondary" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" data-bs-title="Decrease<br>text size">-</button>' +
@@ -207,13 +224,30 @@ $(() => {
             stage.add(layer);
             layer.draw()
 
-            card_groups.push(group)
+            entry.group = group
 
-            $("#select-" + i).on('change', async function (e) {
-                card.selected = this.value
-                await card.redraw()
+            const select = $("#select-" + i)
 
-                layer.draw()
+            select.on('click', async () => {
+                if (card.prints == null) {
+                    card.getPrints().then(() => {
+                        let options = ""
+                        card.prints?.forEach((p) => {
+                            const value = p.code + '-' + p.collector
+                            options += '<option value="' + value + '" ' + (value === card.selected ? "selected" : "") + '>' + p.set_name + ' (#' + p.collector + ')</option>'
+                        })
+                        select.html(options)
+                    })
+                }
+            })
+
+            select.on('change', async function (e) {
+                if (card.prints != null) {
+                    card.selected = this.value
+                    await card.redraw()
+
+                    layer.draw()
+                }
             });
 
             $('#minus-' + i).on('click', async () => {
@@ -245,118 +279,136 @@ $(() => {
             window.addEventListener('resize', fitStageIntoParentContainer);
 
             updateBar()
-
         }
 
         // bootstrap tooltips must be enabled
         const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]')
         const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl))
-
-        if (max > 0) {
-            download_button.on('click', (event) => {
-                if (!event.detail || event.detail === 1) { // prevents multiple clicks
-
-                    // creazione pagine
-                    let images = [];
-                    let pageId = 0;
-                    let total = 0
-                    while (total < card_groups.length) {
-                        const newPage = document.createElement("div");
-                        newPage.id = 'page-' + pageId
-                        elem.appendChild(newPage);
-
-                        let layer = new Konva.Layer();
-                        let pageGroup = new Konva.Group();
-
-                        // sfondo bianco pagina
-                        pageGroup.add(
-                            new Konva.Rect({
-                                width: pageW,
-                                height: pageH,
-                                fill: "white",
-                            })
-                        );
-
-                        let cards = card_groups.slice(total, total + cardsPerPage);
-                        let n = 0;
-
-                        // vertical cards
-                        for (let y = 0; y < R1; y++) {
-                            for (let x = 0; x < C1; x++) {
-                                if (n < cards.length) {
-                                    const group = cards[n].clone()
-                                    group.x(cardW * x)
-                                    group.y(cardH * y)
-
-                                    pageGroup.add(group)
-                                    pageGroup.add(
-                                        new Konva.Line({
-                                            points: [cardW * (x + 1), cardH * y, cardW * (x + 1), cardH * (y + 1), cardW * (x), cardH * (y + 1), cardW * (x + 1), cardH * (y + 1)],
-                                            stroke: 'black', strokeWidth: 0.1, dash: dashSize,
-                                        }));
-                                    n++;
-
-                                }
-                            }
-                        }
-
-                        // horizontal cards
-                        for (let i = 0; i < C2; i++) {
-                            for (let j = 0; j < R2; j++) {
-                                if (n < cards.length) {
-                                    const group = cards[n].clone()
-                                    group.x((C1 * cardW) + (cardH * i))
-                                    group.y(cardW * (j + 1))
-                                    group.rotation(270)
-
-                                    pageGroup.add(group)
-                                    pageGroup.add(
-                                        new Konva.Line({
-                                            points: [(C1 * cardW) + (cardH * i), cardW * (j + 1), (C1 * cardW) + (cardH * (i + 1)), cardW * (j + 1)],
-                                            stroke: 'black', strokeWidth: 0.1, dash: dashSize,
-                                        }));
-                                    // a line is missing, but it isn't shown in the current configuration anyway
-                                    n++;
-                                }
-                            }
-                        }
-
-                        // A4 page border
-                        pageGroup.add(new Konva.Rect({width: pageW, height: pageH, stroke: "white", strokeWidth: 0.5,})
-                        );
-
-                        // the image is saved at a high resolution
-                        let pageStage = new Konva.Stage({
-                            container: newPage.id,
-                            width: pageW * drawMul,
-                            height: pageH * drawMul,
-                        })
-                        pageGroup.scale({x: drawMul, y: drawMul});
-                        layer.add(pageGroup);
-                        pageStage.add(layer);
-                        images.push(pageStage.toDataURL({pixelRatio: 1}));
-                        pageStage.destroy()
-
-                        pageId++;
-                        total += n;
-                    }
-
-                    download_button.prop('disabled', true);
-                    const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4', true);
-
-                    for (const [i, image] of images.entries()) {
-                        pdf.addImage(image, 0, 0, pageW, pageH);
-                        if (i !== images.length - 1)
-                            pdf.insertPage();
-                    }
-                    const fileName = ($("#download-name").val() || "proxy") + ".pdf"
-                    pdf.save(fileName, {returnPromise: true}).then(() => download_button.prop('disabled', false))
-                }
-            });
-            download_button.prop('disabled', false)
-        }
     });
 });
+
+function createPDF() {
+    let card_groups = []
+    for (const entry of card_faces) {
+        for (let i = 0; i < entry.amount; i++) {
+            card_groups.push(entry.group.clone())
+        }
+    }
+
+    // creazione pagine
+    let images = [];
+    let pageId = 0;
+    let total = 0
+
+    while (total < card_groups.length) {
+        const newPage = document.createElement("div");
+        newPage.id = 'page-' + pageId
+        elem.appendChild(newPage);
+
+        let layer = new Konva.Layer();
+        let pageGroup = new Konva.Group();
+
+        // sfondo bianco pagina
+        pageGroup.add(
+            new Konva.Rect({
+                width: pageW,
+                height: pageH,
+                fill: "white",
+            })
+        );
+
+        let cards = card_groups.slice(total, total + cardsPerPage);
+        let n = 0;
+
+        // vertical cards
+        for (let y = 0; y < R1; y++) {
+            for (let x = 0; x < C1; x++) {
+                if (n < cards.length) {
+                    const group = cards[n]
+                    group.x(cardW * x)
+                    group.y(cardH * y)
+
+                    pageGroup.add(group)
+                    pageGroup.add(
+                        new Konva.Line({
+                            points: [cardW * (x + 1), cardH * y, cardW * (x + 1), cardH * (y + 1), cardW * (x), cardH * (y + 1), cardW * (x + 1), cardH * (y + 1)],
+                            stroke: 'black', strokeWidth: 0.1, dash: dashSize,
+                        }));
+                    n++;
+
+                }
+            }
+        }
+
+        // horizontal cards
+        for (let i = 0; i < C2; i++) {
+            for (let j = 0; j < R2; j++) {
+                if (n < cards.length) {
+                    const group = cards[n]
+                    group.x((C1 * cardW) + (cardH * i))
+                    group.y(cardW * (j + 1))
+                    group.rotation(270)
+
+                    pageGroup.add(group)
+                    pageGroup.add(
+                        new Konva.Line({
+                            points: [(C1 * cardW) + (cardH * i), cardW * (j + 1), (C1 * cardW) + (cardH * (i + 1)), cardW * (j + 1)],
+                            stroke: 'black', strokeWidth: 0.1, dash: dashSize,
+                        }));
+                    // a line is missing, but it isn't shown in the current configuration anyway
+                    n++;
+                }
+            }
+        }
+
+        // A4 page border
+        pageGroup.add(new Konva.Rect({width: pageW, height: pageH, stroke: "white", strokeWidth: 0.5,})
+        );
+
+        // the image is saved at a high resolution
+        let pageStage = new Konva.Stage({
+            container: newPage.id,
+            width: pageW * drawMul,
+            height: pageH * drawMul,
+        })
+        pageGroup.scale({x: drawMul, y: drawMul});
+        layer.add(pageGroup);
+        pageStage.add(layer);
+        images.push(pageStage.toDataURL({pixelRatio: 1}));
+        pageStage.destroy()
+
+        pageId++;
+        total += n;
+    }
+
+    const pdf = new window.jspdf.jsPDF({compress: true});
+
+    for (const [i, image] of images.entries()) {
+        pdf.addImage(image, 0, 0, pageW, pageH);
+        if (i !== images.length - 1)
+            pdf.insertPage();
+    }
+
+    const fileName = ($("#download-name").val() || "proxy") + ".pdf"
+    pdf.save(fileName)
+    $('#download-button').prop('disabled', false)
+}
+
+function cardFactory(entry) {
+    let card;
+    const c = entry.face
+    if (c.layout === "split") {
+        card = new SplitCard(entry.scrycard, globalDefaultOptions)
+    } else if (c.type_line.includes("Saga") || c.layout === "class") {
+        card = new SagaCard(entry.scrycard, globalDefaultOptions)
+    } else {
+        card = new NormalCard(entry.scrycard, globalDefaultOptions)
+    }
+    if (c.object === "card_face") {
+        card.face = entry.face
+    }
+    return card
+}
 
 async function fetch_collection(ids) {
     return fetch("https://api.scryfall.com/cards/collection", {
@@ -398,8 +450,9 @@ function parseLines(text) {
     return entries
 }
 
-// TODO: Flip, Double, Meld, Leveler, Class, Saga, Battle, Adventure, Planeswalker
-// TODO: Cambiare orientamento gradiente bordi?
+// TODO: progress bar on download
+// TODO: if land, color the border
+// TODO: Meld, Leveler, Battle, Adventure, Planeswalker
 // TODO: aggiungere nome artista (magari in bianco in parte inferiore art)
 // TODO: utente può cambiare parametri
 // TODO: Indentazione abilità planeswalker e spazio tra paragrafi

@@ -154,8 +154,7 @@ class SplitCard extends Card {
         this.leftCardText = new Konva.Text({
             x: this.typeArtSep.points()[0] + this.o.elemDistance,
             y: this.leftNameText.y(),
-            text: this.leftHalf.oracle_text.replace(/ *\([^)]*\) */g, "")
-                .replace(/\{[^{]+}/g, s => symbol_dic[s]),
+            text: format_oracle(this.leftHalf.oracle_text),
             fontSize: this.o.oracleSize,
             fontFamily: "Open Sans",
             align: "left",
@@ -167,8 +166,7 @@ class SplitCard extends Card {
 
         this.rightCardText = new Konva.Text({
             y: this.rightNameText.y() - this.o.borderOffset,
-            text: this.rightHalf.oracle_text.replace(/ *\([^)]*\) */g, "")
-                .replace(/\{[^{]+}/g, s => symbol_dic[s]),
+            text: format_oracle(this.rightHalf.oracle_text),
             fontSize: this.o.oracleSize,
             fontFamily: "Open Sans",
             align: "left",
@@ -184,8 +182,6 @@ class SplitCard extends Card {
     }
 
     async drawCardImage() {
-        if (this.prints == null) await this.getPrints()
-
         const tallest = this.leftCardText.height() >= this.rightCardText.height() ? this.leftCardText : this.rightCardText
         let remaining_space = tallest.x() - this.typeArtSep.points()[0] - 2 * this.o.elemDistance
         if (remaining_space > 0) {
@@ -206,7 +202,7 @@ class SplitCard extends Card {
                     })
                     this.rightImg.width(this.rightImg.width() / 2)
 
-                    // until it doesn't fit, scale it down 0.1
+                    // until it doesn't fit, scale it down
                     let currentScale = this.o.maxImageScale
                     while (this.leftImg.height() > remaining_space && currentScale >= this.o.minImageScale) {
                         this.leftImg.width(this.o.textWidth * currentScale / 2)
@@ -231,17 +227,7 @@ class SplitCard extends Card {
                     resolve();
                 };
                 imageObj.setAttribute('crossOrigin', 'anonymous');
-
-                if (this.selected != null)
-                    imageObj.src = this.prints.find(p => {
-                        const [code, collector] = this.selected.split("-")
-                        return p.code === code && p.collector === collector
-                    }).art
-                else {
-                    const first = this.prints[0]
-                    this.selected = first.code + "-" + first.collector
-                    imageObj.src = first.art
-                }
+                imageObj.src = this.getImageSrc()
             })
             // wait for the image to load
             await imgLoadPromise;
